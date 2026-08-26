@@ -1,5 +1,6 @@
 .env
-venv/
+data/
 __pycache__/
 *.pyc
-neet_code/neetcode.db
+.venv/
+venv/

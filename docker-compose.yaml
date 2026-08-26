@@ -1,0 +1,11 @@
+services:
+  daily-dsa:
+    build: .
+    container_name: daily-dsa
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./data:/app/data

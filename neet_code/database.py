@@ -2,7 +2,10 @@ import sqlite3
 from pathlib import Path
 
 
-DATABASE_FILE = Path(__file__).parent / "neetcode.db"
+DATA_DIR = Path("/app/data")
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+DATABASE_FILE = DATA_DIR / "neetcode.db"
 
 
 def get_connection():
