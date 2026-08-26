@@ -12,7 +12,7 @@ INDIA_TIMEZONE = ZoneInfo("Asia/Kolkata")
 
 # TESTING:
 # Run once, one minute after the bot starts.
-TEST_MODE = True
+TEST_MODE = False
 
 
 def create_daily_task(bot):
@@ -29,7 +29,7 @@ def create_daily_task(bot):
 
         DAILY_TIME = time(
             hour=0,
-            minute=10,
+            minute=30,
             second=0,
             tzinfo=INDIA_TIMEZONE,
         )
