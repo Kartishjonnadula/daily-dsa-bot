@@ -1,345 +1,75 @@
 import os
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from neet_code.database import (
-    get_current_rotation,
-    get_used_problem_ids,
-)
-from neet_code.problems import load_problems
 import discord
-from discord import app_commands
+import logging
+import asyncio
+from pathlib import Path
 from dotenv import load_dotenv
-
-from neet_code.database import (
-    get_registered_users,
-    get_current_rotation,
-    get_used_problem_ids,
-    initialize_database,
-    register_user,
-    unregister_user,
-)
-from neet_code.rotation import (
-    select_daily_problems,
-)
-from neet_code.scheduler import (
-    create_daily_task,
-)
+from discord.ext import commands
+from neet_code.scheduler import (create_daily_task)
+from neet_code.database import (initialize_database)
 
 
-# =========================================================
-# CONFIG
-# =========================================================
+# ---- LOGGING ----
+logging.basicConfig(level=logging.INFO,format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",datefmt="%Y-%m-%d %H:%M:%S",)
+logger = logging.getLogger("bot")
 
+# ---- CONFIG ----
+ROOT_DIR = Path(__file__).resolve().parent
+COGS_DIR = ROOT_DIR / "cogs"
 load_dotenv()
+TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN: raise RuntimeError("DISCORD_TOKEN is missing from .env")
 
-TOKEN = os.getenv(
-    "DISCORD_TOKEN"
-)
-
-if not TOKEN:
-    raise RuntimeError(
-        "DISCORD_TOKEN is missing "
-        "from .env"
-    )
-
-
-INDIA_TIMEZONE = ZoneInfo(
-    "Asia/Kolkata"
-)
-
-
-# =========================================================
-# DISCORD
-# =========================================================
-
+# ---- DISCORD INITIALIZATION ----
 intents = discord.Intents.default()
-
-client = discord.Client(
-    intents=intents
-)
-
-tree = discord.app_commands.CommandTree(
-    client
-)
-
-daily_task = create_daily_task(
-    client
-)
+bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
+daily_task = create_daily_task(bot)
 
 
-# =========================================================
-# READY
-# =========================================================
+# ---- Bot ----
+class Bot(commands.Bot):
+    def __init__(self) -> None:
+        super().__init__(command_prefix=commands.when_mentioned,intents=intents)
+        self.root_dir = ROOT_DIR
+        self.cogs_dir = COGS_DIR
 
-@client.event
-async def on_ready():
-    initialize_database()
+    async def setup_hook(self) -> None:
+        await self.load_cogs()
+        
+    async def load_cogs(self) -> None:
+        if not self.cogs_dir.exists(): raise FileNotFoundError(f"Cog directory not found: {self.cogs_dir}")
+        for file in sorted(self.cogs_dir.rglob("*.py")):
+            if file.name.startswith("_"): continue
+            relative = file.relative_to(ROOT_DIR)
+            module = ".".join(relative.with_suffix("").parts)
+            try:
+                await self.load_extension(module)
+                logger.info("Loaded cog: %s",module,)
+            except Exception:
+                logger.exception("Failed to load cog: %s",module)
+                raise
 
-    synced = await tree.sync()
+    async def on_ready(self) -> None:
+        initialize_database()
+        for guild in self.guilds:
+            self.tree.copy_global_to(guild=guild)
+            synced = await self.tree.sync(guild=guild)
+            logger.info("Synced %d slash command(s) in the server %s.",len(synced),guild.name)
+        logger.info("Logged in as %s (%s)",self.user,self.user.id if self.user else "unknown")
+        logger.info("Connected to %d guild(s).",len(self.guilds))
 
-    print(
-        f"Logged in as {client.user}"
-    )
-
-    print(
-        f"Synced {len(synced)} commands:"
-    )
-
-    for command in synced:
-        print(
-            f"  /{command.name}"
-        )
-
-    if not daily_task.is_running():
-        daily_task.start()
-
-        print(
-            "Daily scheduler started."
-        )
-
-        print(
-            "Daily problems: "
-            "12:00 PM IST"
-        )
-
-
-# =========================================================
-# /PING
-# =========================================================
-
-@tree.command(
-    name="ping",
-    description="Check if the bot is alive",
-)
-async def ping(
-    interaction: discord.Interaction,
-):
-    await interaction.response.send_message(
-        "🏓 Pong!"
-    )
+        if not daily_task.is_running():
+            daily_task.start()
+            logger.info("Daily scheduler started to post Daily problems at 12:00 AM IST")
 
 
-# =========================================================
-# /REGISTER
-# =========================================================
-
-@tree.command(
-    name="register",
-    description=(
-        "Register yourself for "
-        "NeetCode Daily in this channel"
-    ),
-)
-async def register(
-    interaction: discord.Interaction,
-):
-    if interaction.guild_id is None:
-        await interaction.response.send_message(
-            "❌ You can only register "
-            "inside a Discord server.",
-            ephemeral=True,
-        )
-        return
-
-    register_user(
-        user_id=interaction.user.id,
-        guild_id=interaction.guild_id,
-        channel_id=interaction.channel_id,
-    )
-
-    await interaction.response.send_message(
-        f"✅ {interaction.user.mention}, "
-        f"you are now registered for "
-        f"NeetCode Daily in this channel."
-    )
-
-
-# =========================================================
-# /UNREGISTER
-# =========================================================
-
-@tree.command(
-    name="unregister",
-    description=(
-        "Stop receiving NeetCode Daily "
-        "in this server"
-    ),
-)
-async def unregister(
-    interaction: discord.Interaction,
-):
-    if interaction.guild_id is None:
-        await interaction.response.send_message(
-            "❌ You can only unregister "
-            "inside a Discord server.",
-            ephemeral=True,
-        )
-        return
-
-    removed = unregister_user(
-        user_id=interaction.user.id,
-        guild_id=interaction.guild_id,
-    )
-
-    if removed:
-        await interaction.response.send_message(
-            f"✅ {interaction.user.mention}, "
-            f"you have been unregistered "
-            f"from NeetCode Daily."
-        )
-    else:
-        await interaction.response.send_message(
-            f"ℹ️ {interaction.user.mention}, "
-            f"you were not registered."
-        )
-
-
-# =========================================================
-# /PROBLEMS
-# =========================================================
-
-@tree.command(
-    name="problems",
-    description=(
-        "Get today's two NeetCode problems"
-    ),
-)
-async def problems(
-    interaction: discord.Interaction,
-):
-    today = datetime.now(
-        INDIA_TIMEZONE
-    ).date().isoformat()
-
+# ---- Main ----
+async def main() -> None:
+    bot = Bot()
     try:
-        selected = select_daily_problems(
-            today
-        )
+        logger.info("Starting bot...")
+        async with bot: await bot.start(TOKEN)
+    finally:
+        if not bot.is_closed(): await bot.close()
 
-    except Exception as error:
-        print(
-            f"Problem selection failed: "
-            f"{error}"
-        )
-
-        await interaction.response.send_message(
-            "❌ I couldn't get today's "
-            "problems.",
-            ephemeral=True,
-        )
-
-        return
-
-    await interaction.response.send_message(
-        build_problem_message(
-            selected
-        )
-    )
-
-
-# =========================================================
-# /STATUS
-# =========================================================
-
-@tree.command(
-    name="status",
-    description=(
-        "Show NeetCode Daily registration "
-        "status"
-    ),
-)
-async def status(
-    interaction: discord.Interaction,
-):
-    registrations = (
-        get_registered_users()
-    )
-
-    await interaction.response.send_message(
-        f"📊 **NeetCode Daily**\n\n"
-        f"Registered users: "
-        f"**{len(registrations)}**"
-    )
-
-
-# =========================================================
-# MESSAGE FORMAT
-# =========================================================
-
-def build_problem_message(
-    problems,
-):
-    lines = [
-        "🧠 **NeetCode Daily**",
-        "",
-        "Today's two problems:",
-        "",
-    ]
-
-    for index, problem in enumerate(
-        problems,
-        start=1,
-    ):
-        lines.append(
-            f"**{index}. "
-            f"[{problem['title']}]"
-            f"({problem['url']})**"
-        )
-
-        lines.append(
-            f"Difficulty: "
-            f"`{problem['difficulty']}`"
-        )
-
-        lines.append(
-            f"Category: "
-            f"`{problem['category']}`"
-        )
-
-        lines.append("")
-
-    lines.append(
-        "Good luck! 💪"
-    )
-
-    return "\n".join(lines)
-
-@tree.command(
-    name="rotation",
-    description="Show the current NeetCode rotation",
-)
-async def rotation(
-    interaction: discord.Interaction,
-):
-    rotation = get_current_rotation()
-
-    if rotation is None:
-        await interaction.response.send_message(
-            "ℹ️ No active rotation yet."
-        )
-        return
-
-    problems = load_problems()
-
-    used_ids = get_used_problem_ids(
-        rotation["id"]
-    )
-
-    available = [
-        problem
-        for problem in problems
-        if problem["id"] not in used_ids
-    ]
-
-    await interaction.response.send_message(
-        f"🔄 **NeetCode Rotation**\n\n"
-        f"Rotation: **#{rotation['id']}**\n"
-        f"Used: **{len(used_ids)}**\n"
-        f"Remaining: **{len(available)}**\n"
-        f"Total: **{len(problems)}**"
-    )
-# =========================================================
-# START
-# =========================================================
-
-client.run(TOKEN)
+asyncio.run(main())
