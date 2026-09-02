@@ -9,7 +9,8 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY bot.py .
-COPY neet_code ./neet_code
+# COPY bot.py .
+# COPY neet_code ./neet_code
+COPY . .
 
 CMD ["python", "bot.py"]
