@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+deploy.ps1
+Daily-DSA-Key.pem

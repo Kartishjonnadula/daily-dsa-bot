@@ -6,7 +6,6 @@ from .database import get_registered_users
 from .rotation import select_daily_problems
 from message_formats.formats import build_problem_message
 
-
 INDIA_TIMEZONE = ZoneInfo("Asia/Kolkata")
 TEST_MODE = False
 
