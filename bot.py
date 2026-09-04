@@ -22,10 +22,6 @@ if not TOKEN: raise RuntimeError("DISCORD_TOKEN is missing from .env")
 
 # ---- DISCORD INITIALIZATION ----
 intents = discord.Intents.default()
-bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
-daily_task = create_daily_task(bot)
-
-
 # ---- Bot ----
 class Bot(commands.Bot):
     def __init__(self) -> None:
@@ -57,7 +53,7 @@ class Bot(commands.Bot):
             logger.info("Synced %d slash command(s) in the server %s.",len(synced),guild.name)
         logger.info("Logged in as %s (%s)",self.user,self.user.id if self.user else "unknown")
         logger.info("Connected to %d guild(s).",len(self.guilds))
-
+        daily_task = create_daily_task(self)
         if not daily_task.is_running():
             daily_task.start()
             logger.info("Daily scheduler started to post Daily problems at 12:00 AM IST")
